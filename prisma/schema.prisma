@@ -1,15 +1,58 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String?
+  email     String   @unique
+  createdAt DateTime @default(now())
+  datasets  Dataset[]
+  dashboards Dashboard[]
+}
+
+model Dataset {
+  id        String   @id @default(cuid())
+  name      String
+  schemaJson Json
+  rowCount   Int
+  createdAt DateTime @default(now())
+  owner      User     @relation(fields: [ownerId], references: [id])
+  ownerId    String
+  charts     Chart[]
+}
+
+model Chart {
+  id        String   @id @default(cuid())
+  name      String
+  type      String
+  configJson Json
+  createdAt DateTime @default(now())
+  dataset   Dataset  @relation(fields: [datasetId], references: [id])
+  datasetId String
+  dashboards DashboardItem[]
+}
+
+model Dashboard {
+  id        String   @id @default(cuid())
+  name      String
+  isPublic  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  owner     User     @relation(fields: [ownerId], references: [id])
+  ownerId   String
+  items     DashboardItem[]
+}
+
+model DashboardItem {
+  id          String     @id @default(cuid())
+  layoutJson  Json
+  dashboard   Dashboard  @relation(fields: [dashboardId], references: [id])
+  dashboardId String
+  chart       Chart      @relation(fields: [chartId], references: [id])
+  chartId     String
 }
