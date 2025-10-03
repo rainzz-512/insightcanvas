@@ -1,36 +1,48 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# InsightCanvas
 
-## Getting Started
+**Upload CSV → Build Charts → Share Dashboards**
 
-First, run the development server:
+Project built as a real-world MVP to showcase full-stack skills (Next.js, TypeScript, Postgres, Prisma).
+
+## 🚀 Tech Stack
+- Next.js (App Router, Server/Client Components)
+- TypeScript
+- TailwindCSS
+- Prisma (ORM)
+- PostgreSQL (Neon/Supabase in prod)
+
+## 🧭 Roadmap (MVP)
+- [x] Day 1: Scaffold, Navbar, Button component
+- [x] Day 2: GitHub, README, DB schema planning
+- [ ] Day 3: Postgres + Prisma setup
+- [ ] Day 4: Auth (NextAuth GitHub OAuth)
+- [ ] Day 6–12: CSV upload → schema inference → chart builder → mocked data endpoint
+- [ ] Day 13–14: Dashboard + public share link
+- [ ] Day 17: Real aggregations
+- [ ] Day 18–21: Deploy, polish, docs
+
+## 📊 Planned Database Schema
+
+**User**
+- `id` (cuid), `name`, `email`
+
+**Dataset**
+- `id`, `teamId?`, `ownerId`, `name`, `storageKey`, `schemaJson` (columns/types), `rowsCount`, `createdAt`
+
+**Chart**
+- `id`, `teamId?`, `ownerId`, `datasetId`, `name`, `configJson` (x/y/agg/type/filters), `createdAt`
+
+**Dashboard**
+- `id`, `teamId?`, `ownerId`, `name`, `isPublic`, `createdAt`
+
+**DashboardItem**
+- `id`, `dashboardId`, `chartId`, `layoutJson`
+
+## 🛠️ Run locally
 
 ```bash
+git clone https://github.com/YOUR-USERNAME/insightcanvas.git
+cd insightcanvas
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# open http://localhost:3000
