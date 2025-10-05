@@ -37,6 +37,7 @@ model Dataset {
   owner      User     @relation(fields: [ownerId], references: [id])
   ownerId    String
   charts     Chart[]
+  sampleRowsJson Json?
 }
 
 model Chart {

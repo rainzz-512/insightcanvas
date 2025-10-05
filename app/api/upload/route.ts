@@ -1,3 +1,4 @@
+// app/api/upload/route.ts
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
@@ -6,20 +7,14 @@ import { parse } from "csv-parse/sync";
 
 const prisma = new PrismaClient();
 
-// Helper: basic type inference for a column
 function inferType(values: string[]): "number" | "date" | "string" {
-  // Sample a reasonable number of values (skip empty)
   const sample = values.filter(v => v?.trim() !== "").slice(0, 50);
-
   if (sample.length === 0) return "string";
 
   const isNumber = sample.every(v => /^-?\d+(\.\d+)?$/.test(v.trim()));
   if (isNumber) return "number";
 
-  const isDate = sample.every(v => {
-    const d = new Date(v);
-    return !isNaN(d.getTime());
-  });
+  const isDate = sample.every(v => !isNaN(new Date(v).getTime()));
   if (isDate) return "date";
 
   return "string";
@@ -27,57 +22,57 @@ function inferType(values: string[]): "number" | "date" | "string" {
 
 export async function POST(req: Request) {
   try {
-    // 1) Auth check
+    // 1) Auth
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // 2) Parse multipart/form-data
+    // 2) Read multipart form and file
     const form = await req.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
-
     const filename = file.name || "dataset.csv";
     const text = await file.text();
-
-    if (!text || text.trim().length === 0) {
+    if (!text?.trim()) {
       return NextResponse.json({ error: "Empty file" }, { status: 400 });
     }
 
-    // 3) Parse CSV text into rows (first row = headers)
+    // 3) Parse CSV
     const records: string[][] = parse(text, {
       bom: true,
       skip_empty_lines: true,
     });
-
     if (records.length === 0) {
       return NextResponse.json({ error: "CSV has no rows" }, { status: 400 });
     }
-
     const headers = records[0];
     const dataRows = records.slice(1);
-
     if (headers.length === 0) {
       return NextResponse.json({ error: "CSV has no columns" }, { status: 400 });
     }
 
-    // 4) Build columns and infer types
-    // Collect values per column
-    const columns: { name: string; type: "string" | "number" | "date" }[] = [];
-    for (let colIdx = 0; colIdx < headers.length; colIdx++) {
-      const colName = String(headers[colIdx] ?? `col_${colIdx + 1}`).trim() || `col_${colIdx + 1}`;
+    // 4) Infer column types
+    const columns = headers.map((h, colIdx) => {
+      const name = String(h ?? `col_${colIdx + 1}`).trim() || `col_${colIdx + 1}`;
       const colValues = dataRows.map(row => String(row[colIdx] ?? "").trim());
-      const t = inferType(colValues);
-      columns.push({ name: colName, type: t });
-    }
+      return { name, type: inferType(colValues) };
+    });
 
-    // 5) Count rows
-    const rowsCount = dataRows.length;
+    // 5) Sample rows (first 10) as objects
+    const SAMPLE_LIMIT = 10;
+    const sampleRows = dataRows.slice(0, SAMPLE_LIMIT).map((row) => {
+      const obj: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        const key = String(h ?? `col_${i + 1}`);
+        obj[key] = String(row[i] ?? "");
+      });
+      return obj;
+    });
 
-    // 6) Find the owner user (by email from session)
+    // 6) Find owner
     const owner = await prisma.user.findUnique({
       where: { email: session.user.email! },
       select: { id: true },
@@ -86,32 +81,35 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // 7) Save dataset metadata
+    // 7) Save dataset (matches your Dataset model)
     const dataset = await prisma.dataset.create({
       data: {
         name: filename,
         ownerId: owner.id,
-        rowCount: rowsCount,
-        schemaJson: {
-          columns, // [{ name, type }]
-        },
+        rowCount: dataRows.length,
+        schemaJson: { columns },
+        sampleRowsJson: sampleRows,
       },
-      select: { id: true, name: true, rowCount: true, schemaJson: true, createdAt: true },
+      select: {
+        id: true,
+        name: true,
+        rowCount: true,
+        schemaJson: true,
+        sampleRowsJson: true,
+        createdAt: true,
+      },
     });
 
-    // 8) Respond with summary
+    // 8) Respond
     return NextResponse.json({
       success: true,
       dataset,
       columns: columns.map(c => c.name),
       types: columns.map(c => c.type),
-      rowsCount,
+      rowsCount: dataRows.length,
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Upload error:", err);
-    return NextResponse.json(
-      { error: "Failed to process CSV" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to process CSV" }, { status: 500 });
   }
 }
