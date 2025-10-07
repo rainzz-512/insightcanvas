@@ -12,52 +12,40 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
-
-    const datasetId: string | undefined = body.datasetId;
-    const type: string | undefined = body.type;
-    const name: string | undefined = body.name;
-
-    // Accept either `configJson` OR legacy top-level keys (xKey/yKey or labelKey/valueKey)
-    let configJson = body.configJson as
-      | { xKey?: string; yKey?: string; labelKey?: string; valueKey?: string }
-      | undefined;
-
-    // Back-compat: build configJson if not provided
-    if (!configJson) {
-      const { xKey, yKey, labelKey, valueKey } = body;
-      if (type === "pie") {
-        configJson = { labelKey, valueKey };
-      } else {
-        configJson = { xKey, yKey };
-      }
+    // Robust JSON parse
+    let body: any = null;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    // Validate minimal requirements
-    if (!datasetId || !type) {
+    const { datasetId, name, type, config } = body ?? {};
+    if (!datasetId || !type || !config) {
       return NextResponse.json(
-        { error: "datasetId and type are required" },
+        { error: "datasetId, type, and config are required" },
         { status: 400 }
       );
     }
 
-    // Validate config keys depending on type
+    // validate config shape (bar/line vs pie)
     if (type === "pie") {
-      if (!configJson?.labelKey || !configJson?.valueKey) {
+      if (!config.labelKey || !config.valueKey) {
         return NextResponse.json(
-          { error: "labelKey and valueKey are required for pie" },
+          { error: "For pie: config.labelKey and config.valueKey are required" },
           { status: 400 }
         );
       }
     } else {
-      if (!configJson?.xKey || !configJson?.yKey) {
+      if (!config.xKey || !config.yKey) {
         return NextResponse.json(
-          { error: "xKey and yKey are required for bar/line" },
+          { error: "For bar/line: config.xKey and config.yKey are required" },
           { status: 400 }
         );
       }
     }
 
+    // Verify current user + dataset ownership
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
       select: { id: true },
@@ -66,7 +54,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Ensure dataset belongs to user
     const dataset = await prisma.dataset.findFirst({
       where: { id: datasetId, ownerId: user.id },
       select: { id: true },
@@ -77,18 +64,16 @@ export async function POST(req: Request) {
 
     const chart = await prisma.chart.create({
       data: {
-        name:
-          name ??
-          (type === "pie"
-            ? `${configJson.labelKey} split by ${configJson.valueKey}`
-            : `${configJson.xKey} vs ${configJson.yKey}`),
+        name: name || "Untitled chart",
         type,
-        configJson,
+        configJson: config,
         datasetId: dataset.id,
       },
+      select: { id: true },
     });
 
-    return NextResponse.json({ chart });
+    // Always return JSON
+    return NextResponse.json({ id: chart.id }, { status: 201 });
   } catch (err: any) {
     console.error("POST /api/charts error:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

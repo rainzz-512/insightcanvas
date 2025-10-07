@@ -1,33 +1,38 @@
 "use client";
 
 import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
+  ResponsiveContainer,
+  CartesianGrid,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  CartesianGrid,
-  ResponsiveContainer,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
   PieChart,
   Pie,
   Cell,
   Legend,
 } from "recharts";
 
-type CommonProps = {
-  type: "bar" | "line" | "pie";
-  data: any[]; // array of row objects
+type BaseProps = {
+  data: Record<string, any>[];
 };
 
-// Bar/Line config: { xKey, yKey }
-// Pie config: { labelKey, valueKey }
-type Config =
-  | { xKey: string; yKey: string; labelKey?: never; valueKey?: never }
-  | { labelKey: string; valueKey: string; xKey?: never; yKey?: never };
+type BarLineProps = BaseProps & {
+  type: "bar" | "line";
+  xKey: string;
+  yKey: string;
+};
 
-type Props = CommonProps & Config;
+type PieProps = BaseProps & {
+  type: "pie";
+  labelKey: string;
+  valueKey: string;
+};
+
+type Props = BarLineProps | PieProps;
 
 const COLORS = [
   "#2563EB", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
@@ -35,74 +40,60 @@ const COLORS = [
 ];
 
 export default function ChartViewer(props: Props) {
-  const { type, data } = props;
-
-  if (!data || data.length === 0) {
-    return <p className="text-gray-500 text-sm">Not enough data to render.</p >;
-  }
-
-  if (type === "pie") {
-    const { labelKey, valueKey } = props as Extract<Props, { labelKey: string }>;
-    if (!labelKey || !valueKey) {
-      return <p className="text-gray-500 text-sm">Missing label/value keys for pie.</p >;
-    }
-
-    const pieData = data
-      .map((row) => ({
-        name: String(row[labelKey] ?? ""),
-        value: Number(row[valueKey] ?? 0),
-      }))
-      .filter((d) => !Number.isNaN(d.value));
-
-    if (pieData.length === 0) {
-      return <p className="text-gray-500 text-sm">No numeric values for pie chart.</p >;
-    }
-
-    return (
-      <ResponsiveContainer width="100%" height={360}>
-        <PieChart>
-          <Tooltip />
-          <Legend />
-          <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={120}>
-            {pieData.map((_, i) => (
-              <Cell key={i} fill={COLORS[i % COLORS.length]} />
-            ))}
-          </Pie>
-        </PieChart>
-      </ResponsiveContainer>
-    );
-  }
-
-  // Bar & Line
-  const { xKey, yKey } = props as Extract<Props, { xKey: string }>;
-  if (!xKey || !yKey) {
-    return <p className="text-gray-500 text-sm">Select X and Y to preview your chart.</p >;
-  }
-
-  if (type === "bar") {
-    return (
-      <ResponsiveContainer width="100%" height={360}>
-        <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey={xKey} />
-          <YAxis />
-          <Tooltip />
-          <Bar dataKey={yKey} />
-        </BarChart>
-      </ResponsiveContainer>
-    );
-  }
-
-  // line
+  // Wrapper adds padding and hides overflowing SVG bits
   return (
-    <ResponsiveContainer width="100%" height={360}>
-      <LineChart data={data}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey={xKey} />
-        <YAxis />
-        <Tooltip />
-        <Line type="monotone" dataKey={yKey} />
-      </LineChart>
-    </ResponsiveContainer>
+    <div className="rounded border bg-white p-4 overflow-hidden">
+      {props.type === "bar" && (
+        <ResponsiveContainer width="100%" height={320}>
+          <BarChart
+            data={props.data}
+            margin={{ top: 8, right: 12, bottom: 8, left: 12 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey={props.xKey} />
+            <YAxis />
+            <Tooltip />
+            <Bar dataKey={props.yKey} />
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+
+      {props.type === "line" && (
+        <ResponsiveContainer width="100%" height={320}>
+          <LineChart
+            data={props.data}
+            margin={{ top: 8, right: 12, bottom: 8, left: 12 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey={props.xKey} />
+            <YAxis />
+            <Tooltip />
+            <Line type="monotone" dataKey={props.yKey} />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+
+      {props.type === "pie" && (
+        <ResponsiveContainer width="100%" height={320}>
+          <PieChart margin={{ top: 8, right: 12, bottom: 8, left: 12 }}>
+            <Tooltip />
+            <Legend />
+            <Pie
+              data={(props.data || []).map((r) => ({
+                name: String(r[(props as PieProps).labelKey] ?? ""),
+                value: Number(r[(props as PieProps).valueKey] ?? 0),
+              }))}
+              dataKey="value"
+              nameKey="name"
+              outerRadius={120}
+            >
+              {(props.data || []).map((_, i) => (
+                <Cell key={i} fill={COLORS[i % COLORS.length]} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+      )}
+    </div>
   );
 }

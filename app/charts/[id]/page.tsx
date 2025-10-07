@@ -1,10 +1,8 @@
-// app/charts/[id]/page.tsx
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { redirect } from "next/navigation";
+import { redirect, revalidatePath } from "next/navigation";
 import { PrismaClient } from "@prisma/client";
 import ChartViewer from "@/components/ChartViewer";
-import Link from "next/link";
 
 const prisma = new PrismaClient();
 
@@ -16,7 +14,6 @@ export default async function ChartDetailPage({
     redirect(`/api/auth/signin?callbackUrl=/charts/${params.id}`);
   }
 
-  // Fetch the chart the signed-in user owns (via dataset ownership)
   const chart = await prisma.chart.findFirst({
     where: {
       id: params.id,
@@ -25,14 +22,14 @@ export default async function ChartDetailPage({
     select: {
       id: true,
       name: true,
-      type: true,           // "bar" | "line" | "pie"
-      configJson: true,     // { xKey, yKey } or { labelKey, valueKey }
+      type: true,
+      configJson: true,
       createdAt: true,
       dataset: {
         select: {
           id: true,
           name: true,
-          sampleRowsJson: true, // preview rows saved on dataset
+          sampleRowsJson: true,
         },
       },
     },
@@ -49,46 +46,76 @@ export default async function ChartDetailPage({
     );
   }
 
+  // ✅ Server Action: rename chart
+  async function renameChart(formData: FormData) {
+    "use server";
+    const name = (formData.get("name") as string)?.trim();
+    if (!name) return;
+    await prisma.chart.update({
+      where: { id: chart.id },
+      data: { name },
+    });
+    revalidatePath(`/charts/${chart.id}`);
+  }
+
+  // ✅ Server Action: delete chart
+  async function deleteChart() {
+    "use server";
+    await prisma.dashboardItem.deleteMany({ where: { chartId: chart.id } });
+    await prisma.chart.delete({ where: { id: chart.id } });
+    redirect("/charts");
+  }
+
   const cfg = (chart.configJson as any) || {};
   const data = (chart.dataset.sampleRowsJson as any[]) ?? [];
 
-  // Normalize props for ChartViewer
   const viewerProps =
     chart.type === "pie"
-      ? ({
-          type: "pie" as const,
-          data,
-          labelKey: cfg.labelKey,
-          valueKey: cfg.valueKey,
-        } as const)
-      : ({
-          type: chart.type as "bar" | "line",
-          data,
-          xKey: cfg.xKey,
-          yKey: cfg.yKey,
-        } as const);
+      ? { type: "pie" as const, data, labelKey: cfg.labelKey, valueKey: cfg.valueKey }
+      : { type: chart.type as "bar" | "line", data, xKey: cfg.xKey, yKey: cfg.yKey };
 
   return (
-    <main className="max-w-3xl mx-auto p-6">
-      <div className="flex items-start justify-between">
+    <main className="max-w-3xl mx-auto p-6 space-y-4">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold mb-1">{chart.name}</h1>
-          <p className="text-sm text-gray-600 mb-4">
+          <p className="text-sm text-gray-600">
             Type: {chart.type} · Dataset: {chart.dataset.name} ·{" "}
             {new Date(chart.createdAt).toLocaleString()}
           </p >
         </div>
 
-        {/* ✅ Correct Edit link */}
-        <Link
-          href={`/charts/${chart.id}/edit`}
-          className="text-sm px-3 py-2 border rounded hover:bg-gray-50"
-        >
-          Edit
-        </Link>
+        <div className="flex gap-2">
+          <form action={renameChart} className="flex items-center gap-2">
+            <input
+              name="name"
+              defaultValue={chart.name}
+              className="border rounded px-2 py-1 text-sm"
+              aria-label="Chart name"
+            />
+            <button className="text-sm px-3 py-1 border rounded hover:bg-gray-50" type="submit">
+              Rename
+            </button>
+          </form>
+
+          <form action={deleteChart}>
+            <button
+              type="submit"
+              className="text-sm px-3 py-1 border rounded hover:bg-red-50 text-red-600"
+            >
+              Delete
+            </button>
+          </form>
+
+          <a
+            className="text-sm px-3 py-1 border rounded hover:bg-gray-50"
+            href={`/charts/${chart.id}/edit`}
+          >
+            Edit
+          </a>
+        </div>
       </div>
 
-      {/* ✅ Actual chart render */}
       <div className="border rounded bg-white p-4 shadow-sm">
         <ChartViewer {...viewerProps} />
       </div>

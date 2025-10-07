@@ -57,7 +57,7 @@ export default function NewChartPage() {
 
   const [saving, setSaving] = useState(false);
 
-  // -------- Fetch dataset (flat API response expected) --------
+  // -------- Fetch dataset --------
   useEffect(() => {
     const run = async () => {
       if (!datasetId) return;
@@ -69,7 +69,7 @@ export default function NewChartPage() {
         const json = await res.json();
         if (!res.ok) throw new Error(json?.error || "Failed to load dataset");
 
-        // If your API returns { dataset: {...} }, unwrap it:
+        // Your API returns { dataset: {...} }
         const d: DatasetAPI = json?.id ? json : json?.dataset;
 
         setDataset(d);
@@ -78,10 +78,9 @@ export default function NewChartPage() {
         const sample = (d?.sampleRowsJson ?? []) as Record<string, any>[];
         setRows(Array.isArray(sample) ? sample : []);
 
-        // Sensible defaults
+        // Smart defaults
         if (cols.length >= 2) {
           setXKey(cols[0].name);
-          // Prefer a numeric yKey if available
           const numericCol = cols.find((c) => c.type === "number") ?? cols[1];
           setYKey(numericCol?.name ?? cols[1].name);
           setName(`${numericCol?.name ?? cols[1].name} by ${cols[0].name}`);
@@ -99,7 +98,6 @@ export default function NewChartPage() {
     run();
   }, [datasetId]);
 
-  // -------- Helpers --------
   const numericColumns = useMemo(
     () => columns.filter((c) => c.type === "number"),
     [columns]
@@ -107,42 +105,57 @@ export default function NewChartPage() {
 
   const canPreview = useMemo(() => {
     if (!rows.length || !xKey) return false;
-    if (chartType === "pie") {
-      // Pie needs a label (xKey) + numeric value (yKey)
-      return !!yKey;
-    }
-    // bar/line need x and y
-    return !!yKey;
+    if (chartType === "pie") return !!yKey; // label(xKey) + numeric value(yKey)
+    return !!yKey; // bar/line need x & y
   }, [rows.length, xKey, yKey, chartType]);
 
-  const previewTitle = useMemo(() => {
-    if (!name) return "Untitled chart";
-    return name;
-  }, [name]);
+  const previewTitle = name || "Untitled chart";
 
-  // -------- Save chart --------
+  // -------- Save chart (robust) --------
   const onSave = async () => {
-    if (!datasetId || !xKey || !yKey) return;
+    if (!datasetId) {
+      alert("Missing datasetId");
+      return;
+    }
+    if (chartType === "pie") {
+      if (!xKey || !yKey) {
+        alert("Pick a label (X) and numeric value (Y) for the pie chart.");
+        return;
+      }
+    } else {
+      if (!xKey || !yKey) {
+        alert("Pick both X and Y for the chart.");
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const res = await fetch("/api/charts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        // NOTE: send "config" (not configJson) to match the API
         body: JSON.stringify({
           datasetId,
           name: name || `${yKey} by ${xKey}`,
           type: chartType,
-          configJson:
+          config:
             chartType === "pie"
               ? { labelKey: xKey, valueKey: yKey }
               : { xKey, yKey },
         }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || "Failed to save chart");
-      // go to detail page
-      const id = json?.chart?.id ?? json?.id;
-      router.push(`/charts/${id}`);
+
+      const isJSON = res.headers.get("content-type")?.includes("application/json");
+      if (!res.ok) {
+        const msg = isJSON ? (await res.json()).error : await res.text();
+        throw new Error(msg || `HTTP ${res.status}`);
+      }
+
+      const payload = isJSON ? await res.json() : null;
+      const newId = payload?.id ?? payload?.chart?.id;
+      if (!newId) throw new Error("No id returned from API");
+      router.push(`/charts/${newId}`);
     } catch (e: any) {
       alert(e?.message || "Failed to save chart");
     } finally {
@@ -150,7 +163,7 @@ export default function NewChartPage() {
     }
   };
 
-  // -------- Chart preview (client-only) --------
+  // -------- Preview --------
   const Preview = () => {
     if (!canPreview) {
       return (
@@ -191,7 +204,6 @@ export default function NewChartPage() {
     }
 
     // pie
-    // For pie, we map rows into { name: rows[xKey], value: Number(rows[yKey]) }
     const pieData = rows
       .map((r) => ({
         name: String(r[xKey] ?? ""),
@@ -215,12 +227,8 @@ export default function NewChartPage() {
   };
 
   // -------- Render --------
-  if (!datasetId) {
-    return <main className="p-6 text-red-600">Missing datasetId</main>;
-  }
-  if (loading) {
-    return <main className="p-6">Loading dataset…</main>;
-  }
+  if (!datasetId) return <main className="p-6 text-red-600">Missing datasetId</main>;
+  if (loading) return <main className="p-6">Loading dataset…</main>;
   if (fetchError) {
     return (
       <main className="p-6">
@@ -228,11 +236,9 @@ export default function NewChartPage() {
       </main>
     );
   }
-  if (!dataset) {
-    return <main className="p-6">Dataset not found.</main>;
-  }
+  if (!dataset) return <main className="p-6">Dataset not found.</main>;
 
-  const hasEnoughCols = columns.length >= 1; // at least one column to show something
+  const hasEnoughCols = columns.length >= 1;
 
   return (
     <main className="max-w-3xl mx-auto p-6 space-y-6">

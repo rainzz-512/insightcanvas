@@ -1,4 +1,3 @@
-// app/api/charts/[id]/route.ts
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
@@ -6,36 +5,34 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// (Optional) fetch single chart JSON – handy for client editing forms
+/**
+ * Ensure the signed-in user owns the chart (through its dataset -> owner).
+ */
+async function getOwnedChart(id: string, email?: string | null) {
+  if (!email) return null;
+  return prisma.chart.findFirst({
+    where: { id, dataset: { owner: { email } } },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+      configJson: true,
+      createdAt: true,
+      dataset: { select: { id: true, name: true } },
+    },
+  });
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const chart = await prisma.chart.findFirst({
-      where: {
-        id: params.id,
-        dataset: { owner: { email: session.user.email! } },
-      },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-        configJson: true,
-        dataset: { select: { id: true, name: true, sampleRowsJson: true } },
-        createdAt: true,
-      },
-    });
-
+    const chart = await getOwnedChart(params.id, session?.user?.email);
     if (!chart) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ error: "Chart not found" }, { status: 404 });
     }
-
     return NextResponse.json({ chart });
   } catch (e) {
     console.error("GET /api/charts/[id] error:", e);
@@ -43,7 +40,7 @@ export async function GET(
   }
 }
 
-export async function PATCH(
+export async function PUT(
   req: Request,
   { params }: { params: { id: string } }
 ) {
@@ -53,58 +50,26 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
-    const { name, type, configJson } = body ?? {};
-
-    if (!type || !configJson) {
-      return NextResponse.json(
-        { error: "type and configJson are required" },
-        { status: 400 }
-      );
+    const body = await req.json().catch(() => null);
+    const name = (body?.name ?? "").toString().trim();
+    if (!name) {
+      return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
-    // Validate keys by type
-    if (type === "pie") {
-      if (!configJson?.labelKey || !configJson?.valueKey) {
-        return NextResponse.json(
-          { error: "Pie requires labelKey and valueKey" },
-          { status: 400 }
-        );
-      }
-    } else {
-      if (!configJson?.xKey || !configJson?.yKey) {
-        return NextResponse.json(
-          { error: "Bar/Line require xKey and yKey" },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Ensure ownership through chart → dataset → owner
-    const chart = await prisma.chart.findFirst({
-      where: {
-        id: params.id,
-        dataset: { owner: { email: session.user.email! } },
-      },
-      select: { id: true },
-    });
-    if (!chart) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const owned = await getOwnedChart(params.id, session.user.email);
+    if (!owned) {
+      return NextResponse.json({ error: "Chart not found" }, { status: 404 });
     }
 
     const updated = await prisma.chart.update({
       where: { id: params.id },
-      data: {
-        name: name ?? undefined,
-        type,
-        configJson,
-      },
-      select: { id: true },
+      data: { name },
+      select: { id: true, name: true },
     });
 
     return NextResponse.json({ chart: updated });
   } catch (e) {
-    console.error("PATCH /api/charts/[id] error:", e);
+    console.error("PUT /api/charts/[id] error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
@@ -119,19 +84,15 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Ownership check
-    const chart = await prisma.chart.findFirst({
-      where: {
-        id: params.id,
-        dataset: { owner: { email: session.user.email! } },
-      },
-      select: { id: true },
-    });
-    if (!chart) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const owned = await getOwnedChart(params.id, session.user.email);
+    if (!owned) {
+      return NextResponse.json({ error: "Chart not found" }, { status: 404 });
     }
 
+    // Remove dashboard items that reference this chart first (FK constraint)
+    await prisma.dashboardItem.deleteMany({ where: { chartId: params.id } });
     await prisma.chart.delete({ where: { id: params.id } });
+
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("DELETE /api/charts/[id] error:", e);
