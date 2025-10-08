@@ -1,3 +1,5 @@
+// app/datasets/[id]/page.tsx
+import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { redirect } from "next/navigation";
@@ -6,7 +8,11 @@ import { revalidatePath } from "next/cache";
 
 const prisma = new PrismaClient();
 
-export default async function DatasetPage({ params }: { params: { id: string } }) {
+export default async function DatasetPage({
+  params,
+}: {
+  params: { id: string };
+}) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     redirect(`/api/auth/signin?callbackUrl=/datasets/${params.id}`);
@@ -36,8 +42,10 @@ export default async function DatasetPage({ params }: { params: { id: string } }
     );
   }
 
-  const columns: { name: string; type: string }[] = (dataset.schemaJson as any)?.columns ?? [];
-  const rows: Record<string, any>[] = (dataset.sampleRowsJson as any[]) ?? [];
+  const columns: { name: string; type: string }[] =
+    (dataset.schemaJson as any)?.columns ?? [];
+  const rows: Record<string, any>[] =
+    (dataset.sampleRowsJson as any[]) ?? [];
 
   // ✅ Server Action: rename dataset
   async function renameDataset(formData: FormData) {
@@ -60,8 +68,12 @@ export default async function DatasetPage({ params }: { params: { id: string } }
     });
     const chartIds = charts.map((c) => c.id);
     if (chartIds.length) {
-      await prisma.dashboardItem.deleteMany({ where: { chartId: { in: chartIds } } });
-      await prisma.chart.deleteMany({ where: { id: { in: chartIds } } });
+      await prisma.dashboardItem.deleteMany({
+        where: { chartId: { in: chartIds } },
+      });
+      await prisma.chart.deleteMany({
+        where: { id: { in: chartIds } },
+      });
     }
     await prisma.dataset.delete({ where: { id: dataset.id } });
     redirect("/datasets");
@@ -73,7 +85,8 @@ export default async function DatasetPage({ params }: { params: { id: string } }
         <div>
           <h1 className="text-xl font-semibold mb-1">{dataset.name}</h1>
           <p className="text-sm text-gray-600">
-            {dataset.rowCount} rows · {new Date(dataset.createdAt).toLocaleString()}
+            {dataset.rowCount} rows ·{" "}
+            {new Date(dataset.createdAt).toLocaleString()}
           </p >
         </div>
 
@@ -85,7 +98,10 @@ export default async function DatasetPage({ params }: { params: { id: string } }
               className="border rounded px-2 py-1 text-sm"
               aria-label="Dataset name"
             />
-            <button className="text-sm px-3 py-1 border rounded hover:bg-gray-50" type="submit">
+            <button
+              className="text-sm px-3 py-1 border rounded hover:bg-gray-50"
+              type="submit"
+            >
               Rename
             </button>
           </form>
@@ -99,11 +115,14 @@ export default async function DatasetPage({ params }: { params: { id: string } }
             </button>
           </form>
 
-          <a
-            href= "text-sm px-3 py-1 border rounded hover:bg-gray-50"
+          {/* ✅ Correct link to chart creator */}
+          <Link
+            href={`/charts/new?datasetId=${dataset.id}`}
+            prefetch
+            className="text-sm px-3 py-1 border rounded hover:bg-gray-50"
           >
             Create chart
-          </a >
+          </Link>
         </div>
       </header>
 
@@ -132,7 +151,9 @@ export default async function DatasetPage({ params }: { params: { id: string } }
 
       {/* Sample rows */}
       <section>
-        <h2 className="font-medium mb-2">Sample Rows (first {rows.length || 0} rows)</h2>
+        <h2 className="font-medium mb-2">
+          Sample Rows (first {rows.length || 0} rows)
+        </h2>
         <div className="border rounded overflow-auto bg-white">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
@@ -176,9 +197,12 @@ export default async function DatasetPage({ params }: { params: { id: string } }
           <ul className="space-y-2">
             {dataset.charts.map((c) => (
               <li key={c.id} className="border rounded p-3 bg-white">
-                <a className="font-medium text-blue-600 hover:underline" href={`/charts/${c.id}`}>
+                <Link
+                  href={`/charts/${c.id}`}
+                  className="font-medium text-blue-600 hover:underline"
+                >
                   {c.name}
-                </a >{" "}
+                </Link>{" "}
                 <span className="text-xs text-gray-500">({c.type})</span>
               </li>
             ))}

@@ -32,13 +32,33 @@ type ChartAPI = {
     id: string;
     name: string;
     sampleRowsJson: Record<string, any>[] | null;
+    schemaJson?: { columns?: Column[] } | null;
   };
+};
+
+type DatasetAPI = {
+  id: string;
+  name: string;
+  rowCount: number;
+  schemaJson: { columns?: Column[] } | null;
+  sampleRowsJson: Record<string, any>[] | null;
 };
 
 const COLORS = [
   '#2563EB', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
   '#06B6D4', '#F97316', '#84CC16', '#EC4899', '#14B8A6',
 ];
+
+// --- helper to safely parse JSON or return text/empty
+async function readBodySafe(res: Response) {
+  const text = await res.text(); // read once
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text; // maybe HTML error page or plain text
+  }
+}
 
 export default function EditChartPage() {
   const router = useRouter();
@@ -47,6 +67,9 @@ export default function EditChartPage() {
   const [loading, setLoading] = useState(true);
   const [fetchErr, setFetchErr] = useState<string | null>(null);
   const [chart, setChart] = useState<ChartAPI | null>(null);
+
+  // If sample rows are empty and schemaJson wasn’t returned with the chart, fetch dataset schema:
+  const [schemaCols, setSchemaCols] = useState<Column[] | null>(null);
 
   // editable state
   const [name, setName] = useState('');
@@ -58,7 +81,13 @@ export default function EditChartPage() {
 
   const rows = (chart?.dataset.sampleRowsJson ?? []) as Record<string, any>[];
 
+  // Columns = prefer fetched schema → chart.schemaJson → infer from first sample row
   const columns: Column[] = useMemo(() => {
+    if (schemaCols && schemaCols.length) return schemaCols;
+
+    const apiSchema = chart?.dataset.schemaJson?.columns;
+    if (apiSchema && apiSchema.length) return apiSchema;
+
     const first = rows[0] || {};
     return Object.keys(first).map((k) => {
       const v = first[k];
@@ -70,13 +99,14 @@ export default function EditChartPage() {
           : 'string';
       return { name: k, type: t };
     });
-  }, [rows]);
+  }, [schemaCols, chart?.dataset.schemaJson, rows]);
 
   const numericColumns = useMemo(
     () => columns.filter((c) => c.type === 'number'),
     [columns]
   );
 
+  // Initial fetch of chart
   useEffect(() => {
     (async () => {
       try {
@@ -85,19 +115,19 @@ export default function EditChartPage() {
         const json = await res.json();
         if (!res.ok) throw new Error(json?.error || 'Failed to load chart');
 
-        const c: ChartAPI = json.chart;
+        const c: ChartAPI = json.chart ?? json;
         setChart(c);
         setName(c.name);
         setType(c.type);
 
         if (c.type === 'pie') {
           const cfg = c.configJson as any;
-          setLabelKey(cfg.labelKey);
-          setValueKey(cfg.valueKey);
+          setLabelKey(cfg?.labelKey || '');
+          setValueKey(cfg?.valueKey || '');
         } else {
           const cfg = c.configJson as any;
-          setXKey(cfg.xKey);
-          setYKey(cfg.yKey);
+          setXKey(cfg?.xKey || '');
+          setYKey(cfg?.yKey || '');
         }
       } catch (e: any) {
         setFetchErr(e?.message || 'Unknown error');
@@ -107,11 +137,36 @@ export default function EditChartPage() {
     })();
   }, [id]);
 
+  // Fetch dataset schema if needed (no rows and no schema came with the chart)
+  useEffect(() => {
+    (async () => {
+      if (!chart?.dataset?.id) return;
+
+      const alreadyHaveColumns =
+        (chart.dataset.schemaJson?.columns?.length ?? 0) > 0 ||
+        (schemaCols?.length ?? 0) > 0 ||
+        rows.length > 0;
+
+      if (alreadyHaveColumns) return;
+
+      try {
+        const res = await fetch(`/api/datasets/${chart.dataset.id}`);
+        const json = await res.json();
+        const d: DatasetAPI = json?.dataset ?? json;
+        const cols = d?.schemaJson?.columns ?? [];
+        if (Array.isArray(cols) && cols.length) setSchemaCols(cols);
+      } catch {
+        // ignore; selects will just be empty if truly no schema
+      }
+    })();
+  }, [chart?.dataset?.id, chart?.dataset?.schemaJson, rows.length, schemaCols?.length]);
+
   const canPreview =
     rows.length > 0 &&
     ((type === 'pie' && labelKey && valueKey) ||
       (type !== 'pie' && xKey && yKey));
 
+  // -------- Save / Delete with safe body parsing --------
   const onSave = async () => {
     try {
       const body =
@@ -124,8 +179,17 @@ export default function EditChartPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || 'Failed to update chart');
+
+      const payload = await readBodySafe(res);
+      if (!res.ok) {
+        const msg =
+          (payload && (payload as any).error) ||
+          (typeof payload === 'string' ? payload : '') ||
+          `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+
+      // Optional: if API returns chart, you could use it. We just navigate back.
       router.push(`/charts/${id}`);
     } catch (e: any) {
       alert(e?.message || 'Update failed');
@@ -136,14 +200,21 @@ export default function EditChartPage() {
     if (!confirm('Delete this chart?')) return;
     try {
       const res = await fetch(`/api/charts/${id}`, { method: 'DELETE' });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || 'Delete failed');
+      const payload = await readBodySafe(res);
+      if (!res.ok) {
+        const msg =
+          (payload && (payload as any).error) ||
+          (typeof payload === 'string' ? payload : '') ||
+          `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
       router.push('/charts');
     } catch (e: any) {
       alert(e?.message || 'Delete failed');
     }
   };
 
+  // -------- Preview --------
   const Preview = () => {
     if (!canPreview) {
       return (
@@ -203,11 +274,9 @@ export default function EditChartPage() {
     );
   };
 
+  // -------- Render --------
   if (loading) return <main className="p-6">Loading chart…</main>;
-  if (fetchErr)
-    return (
-      <main className="p-6 text-red-600">Error: {fetchErr}</main>
-    );
+  if (fetchErr) return <main className="p-6 text-red-600">Error: {fetchErr}</main>;
   if (!chart) return <main className="p-6">Chart not found.</main>;
 
   return (
@@ -251,6 +320,9 @@ export default function EditChartPage() {
                 onChange={(e) => setLabelKey(e.target.value)}
                 className="border p-2 rounded w-full"
               >
+                <option value="" disabled>
+                  {columns.length ? 'Select label column…' : 'No columns found'}
+                </option>
                 {columns.map((c) => (
                   <option key={c.name} value={c.name}>
                     {c.name}
@@ -265,6 +337,9 @@ export default function EditChartPage() {
                 onChange={(e) => setValueKey(e.target.value)}
                 className="border p-2 rounded w-full"
               >
+                <option value="" disabled>
+                  {numericColumns.length ? 'Select numeric column…' : 'No numeric columns'}
+                </option>
                 {numericColumns.map((c) => (
                   <option key={c.name} value={c.name}>
                     {c.name} (number)
@@ -282,6 +357,9 @@ export default function EditChartPage() {
                 onChange={(e) => setXKey(e.target.value)}
                 className="border p-2 rounded w-full"
               >
+                <option value="" disabled>
+                  {columns.length ? 'Select X…' : 'No columns found'}
+                </option>
                 {columns.map((c) => (
                   <option key={c.name} value={c.name}>
                     {c.name} {c.type !== 'string' ? `(${c.type})` : ''}
@@ -296,6 +374,9 @@ export default function EditChartPage() {
                 onChange={(e) => setYKey(e.target.value)}
                 className="border p-2 rounded w-full"
               >
+                <option value="" disabled>
+                  {columns.length ? 'Select Y…' : 'No columns found'}
+                </option>
                 {columns
                   .filter((c) => c.name !== xKey)
                   .map((c) => (
@@ -332,4 +413,4 @@ export default function EditChartPage() {
       </div>
     </main>
   );
-}
+} 
