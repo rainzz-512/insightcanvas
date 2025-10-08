@@ -1,124 +1,160 @@
-# InsightCanvas
+# 🧠 InsightCanvas
 
 **Upload CSV → Build Charts → Share Dashboards**
 
-InsightCanvas is a full-stack application exploring real-world engineering concepts: file handling, schema inference, data visualization, authentication, and database-backed dashboards. The aim is to feel like a real startup MVP while showcasing a modern web stack.
+**InsightCanvas** is a full-stack web app that lets you upload CSV datasets, visualize them as charts, and organize those charts into shareable dashboards. It’s designed like a real MVP: modern stack, clean UX, and production-ready patterns.
 
 ---
 
 ## 🚀 Tech Stack
-- **Frontend:** Next.js (App Router) + TypeScript  
+
+- **Framework:** Next.js 15 (App Router) + TypeScript  
 - **Styling:** Tailwind CSS  
 - **ORM:** Prisma  
-- **Database:** PostgreSQL (Neon or Supabase for production)  
+- **Database:** PostgreSQL (Neon / Supabase friendly)  
+- **Auth:** NextAuth.js (GitHub OAuth)  
+- **Charts:** Recharts  
+- **Deploy:** Vercel
 
 ---
 
-## 🧭 Roadmap & Progress
+## ✨ Features
+
+- Upload CSVs with **server-side** parsing + schema inference  
+- Dataset detail: detected columns + sample rows preview  
+- Chart builder: **Bar / Line / Pie** with interactive field selection  
+- Chart CRUD: create, rename, delete; each linked to its dataset  
+- Dashboards: add charts, reorder items, toggle **public/private**  
+- Authz: users can only see & modify their own assets  
+- JSON configs for flexible, evolvable visualization types
+
+---
+
+## 🗂️ Database Schema (high-level)
+
+| Table            | Key columns                                           | Purpose                                  |
+|------------------|--------------------------------------------------------|------------------------------------------|
+| **User**         | `id`, `name`, `email`, `createdAt`                    | Authenticated users                      |
+| **Dataset**      | `id`, `ownerId`, `name`, `schemaJson`, `rowCount`, `sampleRowsJson`, `createdAt` | Uploaded CSV metadata            |
+| **Chart**        | `id`, `datasetId`, `name`, `type`, `configJson`, `createdAt` | Chart definition + linkage       |
+| **Dashboard**    | `id`, `ownerId`, `name`, `isPublic`, `createdAt`      | Container of charts                      |
+| **DashboardItem**| `id`, `dashboardId`, `chartId`, `layoutJson`          | Order/position for charts on dashboard   |
+
+> JSON fields (`schemaJson`, `configJson`, `layoutJson`) keep the MVP flexible while iterating.
+
+---
+
+## 🧭 Roadmap & Status
 
 **Completed**
-- ✅ Project scaffold: Next.js + TypeScript + Tailwind; basic pages and shared layout (navbar).  
-- ✅ Git/GitHub setup: repository configured, SSH auth, professional README.  
-- ✅ Database foundation: Prisma initialized, PostgreSQL provisioned (Neon/Supabase), schema defined, initial migration applied.  
+- Project scaffold (Next.js + TS + Tailwind), navbar layout  
+- Prisma schema + migrations; Postgres ready  
+- CSV upload, schema inference, sample rows  
+- Chart builder + renderer (Recharts)  
+- Dashboard creation, add/remove charts, reorder items  
+- NextAuth GitHub login; per-user ownership  
+- Public dashboards (read-only) toggle  
+- Revalidate UI after mutations; error states & polish
 
-**In Progress / Up Next**
-- ⏳ Authentication with NextAuth (GitHub OAuth) and Prisma adapter (persist sessions/users).  
-- ⏳ CSV upload API: parse on server, infer column types, store dataset meta.  
-- ⏳ Chart builder UI: pick dataset, X/Y/aggregation/type; save chart configs.  
-- ⏳ Dashboard view: render multiple charts; simple layout data.  
-- ⏳ Public share links for read-only dashboards.  
-- ⏳ Real aggregations in the API (group-by + sum/avg/count) against stored rows.  
-- ⏳ Deployment (Vercel) + production Postgres + polish & docs.  
-
----
-
-## 📊 Planned Database Schema (high level)
-
-**User**  
-- `id` (cuid), `name`, `email`, `createdAt`
-
-**Dataset**  
-- `id`, `ownerId`, `name`, `storageKey`, `schemaJson` (columns/types), `rowCount`, `createdAt`
-
-**Chart**  
-- `id`, `datasetId`, `name`, `type`, `configJson` (x/y/agg/filters), `createdAt`
-
-**Dashboard**  
-- `id`, `ownerId`, `name`, `isPublic`, `createdAt`
-
-**DashboardItem**  
-- `id`, `dashboardId`, `chartId`, `layoutJson`
-
-> Note: `Json` fields (`schemaJson`, `configJson`, `layoutJson`) keep the MVP flexible while iterating.
+**Nice-to-have (future)**
+- Server aggregations (group-by sum/avg/count)  
+- Resizable/drag grid (eg. react-grid-layout)  
+- Larger dataset handling + pagination/virtualization  
+- Filters & grouping in the chart UI  
+- E2E tests; one-click Vercel + managed Postgres recipe
 
 ---
 
 ## 🛠️ Local Development
 
-### 1. Clone and install
+### 1) Clone & Install
 
-# SSH (recommended if you set up keys)  
-git clone git@github.com:rainzz-512/insightcanvas.git  
+    git clone git@github.com:rainzz-512/insightcanvas.git
+    cd insightcanvas
+    npm install
 
-# or HTTPS  
-# git clone https://github.com/rainzz-512/insightcanvas.git  
+### 2) Configure Environment
 
-cd insightcanvas  
-npm install  
+Create a `.env` file:
 
----
+    DATABASE_URL="postgresql://user:password@host/db?sslmode=require"
+    NEXTAUTH_SECRET="your_random_secret"
+    GITHUB_ID="your_github_oauth_id"
+    GITHUB_SECRET="your_github_oauth_secret"
 
-### 2. Set environment variables
+Also include a safe `.env.example` (checked-in):
 
-Create a `.env` file in the project root with:
+    DATABASE_URL="postgresql://username:password@host/dbname?sslmode=require"
+    NEXTAUTH_SECRET=""
+    GITHUB_ID=""
+    GITHUB_SECRET=""
 
-DATABASE_URL="postgresql://<user>:<password>@<host>/<db>?sslmode=require"
+### 3) Run Migrations
 
-👉 Never commit real secrets. Instead, commit a `.env.example` file like this:
+    npx prisma migrate dev --name init
+    npx prisma studio   # optional: inspect your DB
 
-# .env.example  
-DATABASE_URL="postgresql://username:password@host/dbname?sslmode=require"
+### 4) Start Dev Server
 
-Developers copy it to `.env` and fill in their own credentials.
+    npm run dev
 
----
-
-### 3. Run database migrations
-
-npx prisma migrate dev --name init  
-
-(Optional) Open the Prisma GUI to inspect your DB:  
-
-npx prisma studio  
+Then open: http://localhost:3000
 
 ---
 
-### 4. Start the dev server
+## 📁 Project Structure (abridged)
 
-npm run dev  
-# open http://localhost:3000  
-
----
-
-## 📂 Project Structure (abridged)
-
-insightcanvas/  
-  app/  
-    layout.tsx          # global layout (navbar, theming)  
-    page.tsx            # homepage  
-    datasets/page.tsx   # /datasets  
-    charts/page.tsx     # /charts  
-    dashboard/page.tsx  # /dashboard  
-  components/  
-    Button.tsx  
-  prisma/  
-    schema.prisma  
-  .env.example          # placeholder for environment variables  
-  README.md  
-  package.json  
-  tsconfig.json  
+    insightcanvas/
+      app/
+        api/…                    # datasets, charts, dashboards endpoints
+        datasets/…               # list + detail
+        charts/…                 # list + detail + edit
+        dashboard/…              # view + edit layout
+        layout.tsx               # global layout (navbar, theme)
+        page.tsx                 # homepage
+      components/
+        Button.tsx
+        ChartRenderer.tsx
+        DashboardCard.tsx
+      prisma/
+        schema.prisma
+      public/
+      .env.example
+      package.json
+      README.md
+      tsconfig.json
 
 ---
 
-## 📄 License
-MIT
+## 🌐 Deploy
+
+Recommended:
+- **Vercel** for Next.js hosting  
+- **Neon / Supabase PostgreSQL** for the database
+
+Set the same environment variables in Vercel → Project Settings → Environment Variables.
+
+Deploy from main:
+
+    git add .
+    git commit -m "Finalize InsightCanvas MVP: datasets, charts, dashboards"
+    git push origin main
+
+Vercel will build & deploy automatically.
+
+---
+
+## 🧩 Example Flow
+
+1. Sign in with GitHub  
+2. Upload a CSV (e.g. `sales_by_region.csv`)  
+3. Verify detected columns + sample rows  
+4. Create a chart (choose type + fields) and save  
+5. Add the chart to a dashboard and reorder  
+6. Toggle dashboard **public** to share a read-only link
+
+---
+
+## 📜 License
+
+MIT License © 2025 Rain Zhao
